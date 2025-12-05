@@ -7,6 +7,7 @@ import {
   FlatList,
   StyleSheet,
 } from "react-native";
+import NetInfo from "@react-native-community/netinfo";
 import {
   auth,
   addDoc,
@@ -18,6 +19,7 @@ import {
 } from "../firebase";
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
+import { saveChatHistory, getChatHistory } from "../utils/chatStorage";
 
 type MessageType = {
   id: string;
@@ -36,9 +38,51 @@ export default function ChatScreen({ route }: Props) {
   
   const [message, setMessage] = useState<string>("");
   const [messages, setMessages] = useState<MessageType[]>([]);
+  const [isOnline, setIsOnline] = useState<boolean>(true);
+  const [cacheLoaded, setCacheLoaded] = useState<boolean>(false);
 
-  // Mengambil data real-time dari Firestore
+  // Load cached messages saat pertama kali mount
   useEffect(() => {
+    const loadCachedMessages = async () => {
+      try {
+        const cachedMessages = await getChatHistory();
+        if (cachedMessages.length > 0) {
+          setMessages(cachedMessages);
+          console.log("Loaded cached messages:", cachedMessages.length);
+        }
+      } catch (error) {
+        console.error("Error loading cached messages:", error);
+      } finally {
+        setCacheLoaded(true);
+      }
+    };
+
+    loadCachedMessages();
+  }, []);
+
+  // Monitor network status
+  useEffect(() => {
+    const unsubscribe = NetInfo.addEventListener(state => {
+      const online = state.isConnected ?? false;
+      setIsOnline(online);
+      console.log("Network status:", online ? "Online" : "Offline");
+    });
+
+    return () => unsubscribe();
+  }, []);
+
+  // Mengambil data real-time dari Firestore dan simpan ke cache
+  // Hanya jalankan setelah cache di-load dan saat online
+  useEffect(() => {
+    // Tunggu cache loaded dulu
+    if (!cacheLoaded) return;
+    
+    // Jika offline, jangan subscribe ke Firestore
+    if (!isOnline) {
+      console.log("Offline mode: using cached messages");
+      return;
+    }
+
     const q = query(messagesCollection, orderBy("createdAt", "asc"));
     
     const unsub = onSnapshot(q, (snapshot) => {
@@ -49,15 +93,31 @@ export default function ChatScreen({ route }: Props) {
           ...(doc.data() as Omit<MessageType, "id">),
         });
       });
-      setMessages(list);
+      
+      // Hanya update jika ada data dari Firestore
+      if (list.length > 0) {
+        setMessages(list);
+        // Simpan ke local storage
+        saveChatHistory(list);
+        console.log("Synced messages from Firestore:", list.length);
+      }
+    }, (error) => {
+      console.log("Firestore error:", error.message);
+      // Saat error, tetap gunakan cache yang sudah di-load
     });
 
     return () => unsub();
-  }, []);
+  }, [cacheLoaded, isOnline]);
 
   // Fungsi mengirim pesan
   const sendMessage = async () => {
     if (!message.trim()) return;
+    
+    if (!isOnline) {
+      // Jika offline, tampilkan pesan error
+      console.log("Cannot send message: offline");
+      return;
+    }
     
     await addDoc(messagesCollection, {
       text: message,
@@ -89,6 +149,13 @@ export default function ChatScreen({ route }: Props) {
   // UI Utama
   return (
     <View style={styles.container}>
+      {/* Offline Banner */}
+      {!isOnline && (
+        <View style={styles.offlineBanner}>
+          <Text style={styles.offlineText}>📴 Mode Offline - Menampilkan pesan tersimpan</Text>
+        </View>
+      )}
+      
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
@@ -98,12 +165,13 @@ export default function ChatScreen({ route }: Props) {
       
       <View style={styles.inputRow}>
         <TextInput
-          style={styles.input}
-          placeholder="Ketik pesan..."
+          style={[styles.input, !isOnline && styles.inputDisabled]}
+          placeholder={isOnline ? "Ketik pesan..." : "Tidak bisa mengirim (offline)"}
           value={message}
           onChangeText={setMessage}
+          editable={isOnline}
         />
-        <Button title="Kirim" onPress={sendMessage} />
+        <Button title="Kirim" onPress={sendMessage} disabled={!isOnline} />
       </View>
     </View>
   );
@@ -112,6 +180,16 @@ export default function ChatScreen({ route }: Props) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  offlineBanner: {
+    backgroundColor: "#ff9800",
+    padding: 8,
+    alignItems: "center",
+  },
+  offlineText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 12,
   },
   listContent: {
     padding: 10,
@@ -147,5 +225,9 @@ const styles = StyleSheet.create({
     marginRight: 10,
     padding: 8,
     borderRadius: 6,
+  },
+  inputDisabled: {
+    backgroundColor: "#f0f0f0",
+    borderColor: "#ddd",
   },
 });
