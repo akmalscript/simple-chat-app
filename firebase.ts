@@ -2,7 +2,11 @@ import { initializeApp } from "firebase/app";
 import { 
   getAuth, 
   signInAnonymously, 
-  onAuthStateChanged 
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile
 } from "firebase/auth";
 import { 
   getFirestore, 
@@ -13,7 +17,11 @@ import {
   orderBy, 
   onSnapshot, 
   CollectionReference, 
-  DocumentData 
+  DocumentData,
+  doc,
+  setDoc,
+  getDocs,
+  where
 } from "firebase/firestore";
 
 const firebaseConfig = {
@@ -32,6 +40,43 @@ const db = getFirestore(app);
 
 // Export collection reference agar bisa dipakai di screen lain
 export const messagesCollection = collection(db, "messages") as CollectionReference<DocumentData>;
+export const usersCollection = collection(db, "users") as CollectionReference<DocumentData>;
+
+// Fungsi untuk mendapatkan email berdasarkan username
+export const getEmailByUsername = async (username: string): Promise<string | null> => {
+  const q = query(usersCollection, where("username", "==", username.toLowerCase()));
+  const snapshot = await getDocs(q);
+  
+  if (snapshot.empty) {
+    return null;
+  }
+  
+  const userData = snapshot.docs[0].data();
+  return userData.email || null;
+};
+
+// Fungsi untuk mengecek apakah username sudah digunakan
+export const isUsernameAvailable = async (username: string): Promise<boolean> => {
+  const q = query(usersCollection, where("username", "==", username.toLowerCase()));
+  const snapshot = await getDocs(q);
+  return snapshot.empty;
+};
+
+// Fungsi untuk generate email dari username (untuk Firebase Auth)
+export const generateEmailFromUsername = (username: string): string => {
+  return `${username.toLowerCase()}@chatapp.local`;
+};
+
+// Fungsi untuk menyimpan data user ke Firestore
+export const saveUserData = async (uid: string, username: string): Promise<void> => {
+  const generatedEmail = generateEmailFromUsername(username);
+  await setDoc(doc(db, "users", uid), {
+    username: username.toLowerCase(),
+    displayUsername: username, // Menyimpan format asli dengan huruf besar/kecil
+    email: generatedEmail,
+    createdAt: serverTimestamp(),
+  });
+};
 
 export {
   auth,
@@ -43,5 +88,13 @@ export {
   query,
   orderBy,
   onSnapshot,
-  onAuthStateChanged
+  onAuthStateChanged,
+  createUserWithEmailAndPassword,
+  signInWithEmailAndPassword,
+  signOut,
+  updateProfile,
+  doc,
+  setDoc,
+  getDocs,
+  where
 };

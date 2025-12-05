@@ -8,6 +8,7 @@ import {
   StyleSheet,
 } from "react-native";
 import {
+  auth,
   addDoc,
   serverTimestamp,
   query,
@@ -22,6 +23,7 @@ type MessageType = {
   id: string;
   text: string;
   user: string;
+  userId: string;
   createdAt: { seconds: number; nanoseconds: number } | null;
 };
 
@@ -29,10 +31,13 @@ type Props = NativeStackScreenProps<RootStackParamList, "Chat">;
 
 export default function ChatScreen({ route }: Props) {
   const { name } = route.params;
+  const currentUser = auth.currentUser;
+  const displayName = currentUser?.displayName || currentUser?.email || name;
+  
   const [message, setMessage] = useState<string>("");
   const [messages, setMessages] = useState<MessageType[]>([]);
 
-  // Slide 17: Mengambil data real-time dari Firestore
+  // Mengambil data real-time dari Firestore
   useEffect(() => {
     const q = query(messagesCollection, orderBy("createdAt", "asc"));
     
@@ -50,40 +55,45 @@ export default function ChatScreen({ route }: Props) {
     return () => unsub();
   }, []);
 
-  // Slide 17: Fungsi mengirim pesan
+  // Fungsi mengirim pesan
   const sendMessage = async () => {
     if (!message.trim()) return;
     
     await addDoc(messagesCollection, {
       text: message,
-      user: name,
+      user: displayName,
+      userId: currentUser?.uid || "",
       createdAt: serverTimestamp(),
     });
     
     setMessage("");
   };
 
-  // Slide 17: Render item chat bubble
-  const renderItem = ({ item }: { item: MessageType }) => (
-    <View
-      style={[
-        styles.msgBox,
-        item.user === name ? styles.myMsg : styles.otherMsg,
-      ]}
-    >
-      <Text style={styles.sender}>{item.user}</Text>
-      <Text>{item.text}</Text>
-    </View>
-  );
+  // Render item chat bubble
+  const renderItem = ({ item }: { item: MessageType }) => {
+    const isMyMessage = item.userId === currentUser?.uid;
+    
+    return (
+      <View
+        style={[
+          styles.msgBox,
+          isMyMessage ? styles.myMsg : styles.otherMsg,
+        ]}
+      >
+        <Text style={styles.sender}>{item.user}</Text>
+        <Text>{item.text}</Text>
+      </View>
+    );
+  };
 
-  // Slide 18: UI Utama
+  // UI Utama
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.container}>
       <FlatList
         data={messages}
         keyExtractor={(item) => item.id}
         renderItem={renderItem}
-        contentContainerStyle={{ padding: 10 }}
+        contentContainerStyle={styles.listContent}
       />
       
       <View style={styles.inputRow}>
@@ -100,6 +110,12 @@ export default function ChatScreen({ route }: Props) {
 }
 
 const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  listContent: {
+    padding: 10,
+  },
   msgBox: {
     padding: 10,
     marginVertical: 6,
