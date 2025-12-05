@@ -3,11 +3,15 @@ import {
   View,
   Text,
   TextInput,
-  Button,
   FlatList,
   StyleSheet,
+  TouchableOpacity,
+  Image,
+  ActivityIndicator,
+  Alert,
 } from "react-native";
 import NetInfo from "@react-native-community/netinfo";
+import { launchImageLibrary } from "react-native-image-picker";
 import {
   auth,
   addDoc,
@@ -27,6 +31,7 @@ type MessageType = {
   user: string;
   userId: string;
   createdAt: { seconds: number; nanoseconds: number } | null;
+  imageData?: string; // Base64 data URI (opsional)
 };
 
 type Props = NativeStackScreenProps<RootStackParamList, "Chat">;
@@ -40,6 +45,8 @@ export default function ChatScreen({ route }: Props) {
   const [messages, setMessages] = useState<MessageType[]>([]);
   const [isOnline, setIsOnline] = useState<boolean>(true);
   const [cacheLoaded, setCacheLoaded] = useState<boolean>(false);
+  const [isUploading, setIsUploading] = useState<boolean>(false);
+  const [selectedImage, setSelectedImage] = useState<string | null>(null);
 
   // Load cached messages saat pertama kali mount
   useEffect(() => {
@@ -109,24 +116,65 @@ export default function ChatScreen({ route }: Props) {
     return () => unsub();
   }, [cacheLoaded, isOnline]);
 
-  // Fungsi mengirim pesan
-  const sendMessage = async () => {
-    if (!message.trim()) return;
-    
+  // Fungsi pilih gambar dari galeri
+  const pickImage = async () => {
     if (!isOnline) {
-      // Jika offline, tampilkan pesan error
-      console.log("Cannot send message: offline");
+      Alert.alert("Offline", "Tidak bisa upload gambar saat offline");
       return;
     }
-    
-    await addDoc(messagesCollection, {
-      text: message,
-      user: displayName,
-      userId: currentUser?.uid || "",
-      createdAt: serverTimestamp(),
+
+    const result = await launchImageLibrary({
+      mediaType: 'photo',
+      quality: 0.4,
+      maxWidth: 600,
+      maxHeight: 600,
+      includeBase64: true,
     });
+
+    const asset = result.assets?.[0];
+    if (!asset || !asset.base64) return;
+
+    const mime = asset.type || 'image/jpeg';
+    const dataUri = `data:${mime};base64,${asset.base64}`;
+
+    // Cek ukuran (Firestore limit ~1MB per document)
+    if (dataUri.length > 900000) {
+      Alert.alert("Gambar terlalu besar", "Pilih gambar yang lebih kecil (< 1MB).");
+      return;
+    }
+
+    setSelectedImage(dataUri);
+  };
+
+  // Fungsi kirim pesan (dengan atau tanpa gambar)
+  const sendMessage = async () => {
+    if (!message.trim() && !selectedImage) return;
     
-    setMessage("");
+    if (!isOnline) {
+      Alert.alert("Offline", "Tidak bisa mengirim pesan saat offline");
+      return;
+    }
+
+    setIsUploading(true);
+    
+    try {
+      await addDoc(messagesCollection, {
+        text: message,
+        imageData: selectedImage || null,
+        user: displayName,
+        userId: currentUser?.uid || "",
+        createdAt: serverTimestamp(),
+      });
+      
+      setMessage("");
+      setSelectedImage(null);
+      console.log("Message sent successfully");
+    } catch (error: any) {
+      console.error("Error sending message:", error);
+      Alert.alert("Error", "Gagal mengirim pesan");
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   // Render item chat bubble
@@ -141,7 +189,16 @@ export default function ChatScreen({ route }: Props) {
         ]}
       >
         <Text style={styles.sender}>{item.user}</Text>
-        <Text>{item.text}</Text>
+        {/* Tampilkan gambar jika ada */}
+        {item.imageData && (
+          <Image
+            source={{ uri: item.imageData }}
+            style={styles.messageImage}
+            resizeMode="cover"
+          />
+        )}
+        {/* Tampilkan teks jika ada */}
+        {item.text ? <Text>{item.text}</Text> : null}
       </View>
     );
   };
@@ -162,16 +219,49 @@ export default function ChatScreen({ route }: Props) {
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
       />
+
+      {/* Preview gambar yang dipilih */}
+      {selectedImage && (
+        <View style={styles.previewContainer}>
+          <Image source={{ uri: selectedImage }} style={styles.previewImage} />
+          <TouchableOpacity onPress={() => setSelectedImage(null)} style={styles.closeButton}>
+            <Text style={styles.closeButtonText}>✕</Text>
+          </TouchableOpacity>
+        </View>
+      )}
       
       <View style={styles.inputRow}>
+        {/* Tombol Upload Gambar */}
+        <TouchableOpacity
+          style={[styles.imageButton, (!isOnline || isUploading) && styles.imageButtonDisabled]}
+          onPress={pickImage}
+          disabled={!isOnline || isUploading}
+        >
+          {isUploading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.imageButtonText}>📷</Text>
+          )}
+        </TouchableOpacity>
+        
         <TextInput
           style={[styles.input, !isOnline && styles.inputDisabled]}
           placeholder={isOnline ? "Ketik pesan..." : "Tidak bisa mengirim (offline)"}
           value={message}
           onChangeText={setMessage}
-          editable={isOnline}
+          editable={isOnline && !isUploading}
         />
-        <Button title="Kirim" onPress={sendMessage} disabled={!isOnline} />
+        <TouchableOpacity
+          style={[styles.sendButton, (!isOnline || isUploading || (!message.trim() && !selectedImage)) && styles.sendButtonDisabled]}
+          onPress={sendMessage}
+          disabled={!isOnline || isUploading || (!message.trim() && !selectedImage)}
+        >
+          {isUploading ? (
+            <ActivityIndicator size="small" color="#fff" />
+          ) : (
+            <Text style={styles.sendButtonText}>Kirim</Text>
+          )}
+        </TouchableOpacity>
       </View>
     </View>
   );
@@ -218,6 +308,7 @@ const styles = StyleSheet.create({
     padding: 10,
     borderTopWidth: 1,
     borderColor: "#ccc",
+    alignItems: "center",
   },
   input: {
     flex: 1,
@@ -229,5 +320,71 @@ const styles = StyleSheet.create({
   inputDisabled: {
     backgroundColor: "#f0f0f0",
     borderColor: "#ddd",
+  },
+  imageButton: {
+    backgroundColor: "#007bff",
+    padding: 10,
+    borderRadius: 6,
+    marginRight: 10,
+    justifyContent: "center",
+    alignItems: "center",
+    width: 44,
+    height: 44,
+  },
+  imageButtonDisabled: {
+    backgroundColor: "#ccc",
+  },
+  imageButtonText: {
+    fontSize: 20,
+  },
+  messageImage: {
+    width: 200,
+    height: 200,
+    borderRadius: 8,
+    marginTop: 4,
+    marginBottom: 4,
+  },
+  previewContainer: {
+    padding: 10,
+    borderTopWidth: 1,
+    borderColor: "#ccc",
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f5f5f5",
+  },
+  previewImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 8,
+  },
+  closeButton: {
+    position: "absolute",
+    top: 5,
+    left: 75,
+    backgroundColor: "#ff4444",
+    borderRadius: 12,
+    width: 24,
+    height: 24,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
+    fontSize: 12,
+  },
+  sendButton: {
+    backgroundColor: "#22c55e",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    borderRadius: 6,
+    alignItems: "center",
+  },
+  sendButtonDisabled: {
+    opacity: 0.6,
+  },
+  sendButtonText: {
+    color: "#fff",
+    fontWeight: "bold",
   },
 });

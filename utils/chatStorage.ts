@@ -11,6 +11,7 @@ export interface StoredMessage {
   user: string;
   userId: string;
   createdAt: { seconds: number; nanoseconds: number } | null;
+  imageUrl?: string; // URL gambar (opsional)
 }
 
 /**

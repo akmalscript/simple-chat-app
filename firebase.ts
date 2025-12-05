@@ -26,6 +26,13 @@ import {
   getDocs,
   where
 } from "firebase/firestore";
+import { 
+  getStorage, 
+  ref, 
+  uploadBytes,
+  uploadString,
+  getDownloadURL 
+} from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: "AIzaSyBoCaDlHy_XvSGZEE5r033ci2e4iUziuRg",
@@ -45,6 +52,9 @@ const auth = initializeAuth(app, {
 });
 
 const db = getFirestore(app);
+
+// Inisialisasi Firebase Storage
+const storage = getStorage(app);
 
 // Export collection reference agar bisa dipakai di screen lain
 export const messagesCollection = collection(db, "messages") as CollectionReference<DocumentData>;
@@ -89,6 +99,7 @@ export const saveUserData = async (uid: string, username: string): Promise<void>
 export {
   auth,
   db,
+  storage,
   collection,
   addDoc,
   serverTimestamp,
@@ -104,5 +115,9 @@ export {
   doc,
   setDoc,
   getDocs,
-  where
+  where,
+  ref,
+  uploadBytes,
+  uploadString,
+  getDownloadURL
 };
