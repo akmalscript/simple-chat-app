@@ -1,6 +1,6 @@
 import { initializeApp } from "firebase/app";
 import { 
-  getAuth, 
+  initializeAuth,
   signInAnonymously, 
   onAuthStateChanged,
   createUserWithEmailAndPassword,
@@ -8,6 +8,9 @@ import {
   signOut,
   updateProfile
 } from "firebase/auth";
+//@ts-ignore
+import { getReactNativePersistence } from "@firebase/auth/dist/rn/index.js";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { 
   getFirestore, 
   collection, 
@@ -35,7 +38,12 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
+
+// Inisialisasi Auth dengan AsyncStorage persistence untuk React Native
+const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage)
+});
+
 const db = getFirestore(app);
 
 // Export collection reference agar bisa dipakai di screen lain

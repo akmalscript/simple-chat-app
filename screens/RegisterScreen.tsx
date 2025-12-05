@@ -164,7 +164,7 @@ export default function RegisterScreen({ navigation }: Props) {
               style={styles.eyeButton}
               onPress={() => setShowPassword(!showPassword)}
             >
-              <Text style={styles.eyeText}>{showPassword ? "🙈" : "👁️"}</Text>
+              <Text style={styles.eyeText}>{showPassword ? "🔒" : "👁️"}</Text>
             </TouchableOpacity>
           </View>
 
@@ -181,7 +181,7 @@ export default function RegisterScreen({ navigation }: Props) {
               style={styles.eyeButton}
               onPress={() => setShowConfirmPassword(!showConfirmPassword)}
             >
-              <Text style={styles.eyeText}>{showConfirmPassword ? "🙈" : "👁️"}</Text>
+              <Text style={styles.eyeText}>{showConfirmPassword ? "🔒" : "👁️"}</Text>
             </TouchableOpacity>
           </View>
 

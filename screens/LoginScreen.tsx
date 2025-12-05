@@ -14,6 +14,7 @@ import {
 import { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { RootStackParamList } from "../App";
 import { auth, signInWithEmailAndPassword, generateEmailFromUsername } from "../firebase";
+import { setRememberMe } from "../utils/authStorage";
 
 type Props = NativeStackScreenProps<RootStackParamList, "Login">;
 
@@ -21,6 +22,8 @@ export default function LoginScreen({ navigation }: Props) {
   const [username, setUsername] = useState<string>("");
   const [password, setPassword] = useState<string>("");
   const [loading, setLoading] = useState<boolean>(false);
+  const [rememberMe, setRememberMeState] = useState<boolean>(true);
+  const [showPassword, setShowPassword] = useState<boolean>(false);
 
   const handleLogin = async () => {
     // Validasi input
@@ -40,6 +43,11 @@ export default function LoginScreen({ navigation }: Props) {
 
       // Login dengan email dan password
       await signInWithEmailAndPassword(auth, emailToUse, password);
+      
+      // Simpan preferensi "Ingat Saya" setelah login berhasil
+      console.log("Login successful, saving remember me:", rememberMe);
+      await setRememberMe(rememberMe);
+      
       // Navigasi akan ditangani oleh onAuthStateChanged di App.tsx
     } catch (error: any) {
       let errorMessage = "Terjadi kesalahan saat login";
@@ -92,14 +100,34 @@ export default function LoginScreen({ navigation }: Props) {
             autoCorrect={false}
           />
 
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            autoCapitalize="none"
-          />
+          <View style={styles.passwordContainer}>
+            <TextInput
+              style={styles.passwordInput}
+              placeholder="Password"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry={!showPassword}
+              autoCapitalize="none"
+            />
+            <TouchableOpacity
+              style={styles.eyeButton}
+              onPress={() => setShowPassword(!showPassword)}
+            >
+              <Text style={styles.eyeIcon}>{showPassword ? "🔒" : "👁️"}</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Checkbox Ingat Saya */}
+          <TouchableOpacity
+            style={styles.rememberMeContainer}
+            onPress={() => setRememberMeState(!rememberMe)}
+            activeOpacity={0.7}
+          >
+            <View style={[styles.checkbox, rememberMe && styles.checkboxChecked]}>
+              {rememberMe && <Text style={styles.checkmark}>✓</Text>}
+            </View>
+            <Text style={styles.rememberMeText}>Ingat Saya (7 hari)</Text>
+          </TouchableOpacity>
 
           <TouchableOpacity
             style={[styles.button, loading && styles.buttonDisabled]}
@@ -159,6 +187,26 @@ const styles = StyleSheet.create({
     marginBottom: 15,
     fontSize: 16,
   },
+  passwordContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#ddd",
+    borderRadius: 10,
+    marginBottom: 15,
+  },
+  passwordInput: {
+    flex: 1,
+    padding: 15,
+    fontSize: 16,
+  },
+  eyeButton: {
+    padding: 15,
+  },
+  eyeIcon: {
+    fontSize: 20,
+  },
   button: {
     backgroundColor: "#007AFF",
     padding: 15,
@@ -187,5 +235,33 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#007AFF",
     fontWeight: "bold",
+  },
+  rememberMeContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#007AFF",
+    justifyContent: "center",
+    alignItems: "center",
+    marginRight: 10,
+    backgroundColor: "#fff",
+  },
+  checkboxChecked: {
+    backgroundColor: "#007AFF",
+  },
+  checkmark: {
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "bold",
+  },
+  rememberMeText: {
+    fontSize: 14,
+    color: "#666",
   },
 });

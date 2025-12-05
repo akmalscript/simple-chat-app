@@ -1,12 +1,19 @@
-import { View, Text, ActivityIndicator, TouchableOpacity, StyleSheet } from "react-native";
+import { Text, TouchableOpacity, StyleSheet } from "react-native";
 import React, { useEffect, useState, useMemo } from "react";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator, NativeStackNavigationOptions } from "@react-navigation/native-stack";
 import LoginScreen from "./screens/LoginScreen";
 import RegisterScreen from "./screens/RegisterScreen";
 import ChatScreen from "./screens/ChatScreen";
+import SplashScreen from "./screens/SplashScreen";
 import { auth, signOut, onAuthStateChanged } from "./firebase";
 import { User } from "firebase/auth";
+import { 
+  isSessionExpired, 
+  updateLastActivity, 
+  clearSessionData,
+  getRememberMe 
+} from "./utils/authStorage";
 
 // Definisi tipe navigasi
 export type RootStackParamList = {
@@ -21,6 +28,7 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 function LogoutButton() {
   const handleLogout = async () => {
     try {
+      await clearSessionData();
       await signOut(auth);
     } catch (error) {
       console.error("Error saat logout:", error);
@@ -43,27 +51,69 @@ const chatScreenOptions: NativeStackNavigationOptions = {
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [initializing, setInitializing] = useState<boolean>(true);
+  const [showSplash, setShowSplash] = useState<boolean>(true);
+  const [sessionChecked, setSessionChecked] = useState<boolean>(false);
+
+  // Cek sesi dan auto-logout jika expired
+  const checkSessionAndLogout = async (currentUser: User | null) => {
+    if (currentUser) {
+      // Tunggu sebentar untuk memastikan AsyncStorage siap
+      await new Promise<void>(resolve => setTimeout(resolve, 100));
+      
+      const expired = await isSessionExpired();
+      console.log("Session expired result:", expired);
+      
+      if (expired) {
+        // Sesi sudah expired, logout otomatis
+        console.log("Sesi expired, melakukan auto-logout...");
+        await clearSessionData();
+        await signOut(auth);
+        return false;
+      } else {
+        // Update waktu aktivitas terakhir
+        const rememberMe = await getRememberMe();
+        if (rememberMe) {
+          await updateLastActivity();
+        }
+        return true;
+      }
+    }
+    return false;
+  };
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      if (initializing) setInitializing(false);
+    const unsub = onAuthStateChanged(auth, async (u) => {
+      if (u && !sessionChecked) {
+        // Cek apakah sesi masih valid
+        const isValid = await checkSessionAndLogout(u);
+        if (isValid) {
+          setUser(u);
+        }
+        setSessionChecked(true);
+      } else {
+        setUser(u);
+      }
+      
+      if (initializing) {
+        setInitializing(false);
+      }
     });
 
     return () => unsub();
-  }, [initializing]);
+  }, [initializing, sessionChecked]);
 
   const chatInitialParams = useMemo(() => ({
     name: user?.displayName || user?.email || "Pengguna"
   }), [user?.displayName, user?.email]);
 
-  if (initializing) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#007AFF" />
-        <Text style={styles.loadingText}>Memuat...</Text>
-      </View>
-    );
+  // Handler ketika splash screen selesai
+  const handleSplashFinish = () => {
+    setShowSplash(false);
+  };
+
+  // Tampilkan splash screen
+  if (showSplash || initializing) {
+    return <SplashScreen onFinish={handleSplashFinish} />;
   }
 
   return (
@@ -98,17 +148,6 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#f5f5f5",
-  },
-  loadingText: {
-    marginTop: 10,
-    fontSize: 16,
-    color: "#666",
-  },
   logoutButton: {
     marginRight: 10,
     paddingHorizontal: 12,
